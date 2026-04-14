@@ -67,16 +67,14 @@ TEST_DURATIONS = {
 
 MEASUREMENT_SPECS = {
     "voltage_accuracy_test": [
-        ("voltage_rms_120v", 120.0, 0.5, "V"),
-        ("voltage_rms_130v", 130.0, 0.5, "V"),
+        ("voltage_rms_240v", 240.0, 0.5, "V"),
     ],
     "current_accuracy_test": [
-        ("current_rms_40a", 40.0, 2.0, "A"),
-        ("current_rms_6a",   6.0, 0.3, "A"),
+        ("current_rms_40a", 40.0, 0.4, "A"),   # ±1% of 40A
+        ("current_rms_6a",   6.0, 0.06, "A"),  # ±1% of 6A
     ],
     "buzzer_function_test": [
-        ("dominant_freq_hz", 2500.0, 100.0, "Hz"),
-        ("peak_prominence_db", 20.0, 5.0, "dB"),
+        ("dominant_freq_hz", 2500.0, 250.0, "Hz"),
     ],
     "test_cp_pwm": [
         ("duty_cycle_6a",  10.0, 0.5, "%"),
@@ -85,26 +83,45 @@ MEASUREMENT_SPECS = {
     ],
 }
 
+# Per-fixture systematic bias (simulates real-world calibration offsets).
+# These make the measurement quality scatter/trend charts interesting.
+# bias = fraction of target added to both nominal and value independently.
+FIXTURE_BIAS = {
+    # (nominal_bias_pct, value_extra_bias_pct)
+    "BOX-01": (0.00,  0.00),   # reference fixture, no bias
+    "BOX-02": (0.00, +0.18),   # EVSE reads slightly high on this fixture
+    "BOX-03": (0.00, -0.22),   # EVSE reads slightly low on this fixture
+}
+
 
 def rand_dur(test_name):
     mean, std = TEST_DURATIONS.get(test_name, (10, 2))
     return max(1.0, random.gauss(mean, std))
 
 
-def make_measurement(spec, test_passed):
+def make_measurement(spec, test_passed, fixture_id="BOX-01"):
     name, target, tolerance, unit = spec
+    _, value_bias_pct = FIXTURE_BIAS.get(fixture_id, (0.0, 0.0))
+    value_bias = target * value_bias_pct / 100.0
+
+    # nominal = what the reference instrument (Chroma) measured — near target
+    nominal = target + random.gauss(0, tolerance * 0.05)
+
     if test_passed:
-        value = target + random.gauss(0, tolerance * 0.3)
+        # value = EVSE-reported reading: tracks nominal closely + fixture bias
+        value = nominal + random.gauss(value_bias, tolerance * 0.25)
     else:
-        # Failing measurement — out of tolerance
+        # Failing measurement — outside tolerance
         value = target + tolerance * random.uniform(1.2, 2.5) * random.choice([-1, 1])
-    in_tol = abs(value - target) <= tolerance
+
+    in_tol = abs(value - nominal) <= tolerance
     return {
         "metric": name,
-        "value": round(value, 3),
+        "value": round(value, 4),
+        "nominal": round(nominal, 4),
         "unit": unit,
-        "tolerance_min": round(target - tolerance, 3),
-        "tolerance_max": round(target + tolerance, 3),
+        "tolerance_min": round(nominal - tolerance, 4),
+        "tolerance_max": round(nominal + tolerance, 4),
         "passed": in_tol,
     }
 
@@ -158,7 +175,7 @@ def seed(days=90, runs_per_day_range=(8, 20)):
 
                     meas_dicts = []
                     for spec in MEASUREMENT_SPECS.get(test_name, []):
-                        meas_dicts.append(make_measurement(spec, passed))
+                        meas_dicts.append(make_measurement(spec, passed, fixture))
 
                     results.append(TestResult(
                         test_name=test_name,
@@ -171,6 +188,7 @@ def seed(days=90, runs_per_day_range=(8, 20)):
                             Measurement(
                                 metric_name=m["metric"],
                                 value=m["value"],
+                                nominal=m.get("nominal"),
                                 unit=m["unit"],
                                 tolerance_min=m["tolerance_min"],
                                 tolerance_max=m["tolerance_max"],

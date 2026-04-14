@@ -3,11 +3,11 @@ Description=MFG Dashboard Flask App
 After=network.target postgresql.service
 
 [Service]
-User=paul
-WorkingDirectory=/home/paul/mfg_dashboard
+User=mbruckner
+WorkingDirectory=/home/mbruckner/mfg_dashboard
 Environment="DATABASE_URL=postgresql://mfg_dashboard:mfg_dashboard@localhost/mfg_dashboard"
 Environment="SECRET_KEY=change-me-in-production"
-ExecStart=/home/paul/mfg_dashboard/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5000 --timeout 60 "run:app"
+ExecStart=/home/mbruckner/mfg_dashboard/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5000 --timeout 60 "run:app"
 Restart=on-failure
 RestartSec=5
 

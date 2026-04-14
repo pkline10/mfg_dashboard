@@ -141,6 +141,49 @@
       </div>
     </section>
 
+    <!-- Measurement Quality -->
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Measurement Quality</h2>
+        <p class="section-hint">
+          Per-fixture accuracy and spread for each measured parameter.
+          Bias on one fixture only → fixture calibration issue. &nbsp;|&nbsp;
+          All fixtures drifting together → reference instrument or component lot issue.
+        </p>
+        <div class="mq-controls">
+          <label>Metric:
+            <select id="mq-metric-select"><option value="">— loading —</option></select>
+          </label>
+        </div>
+        <div class="section-row mq-charts">
+          <div class="chart-box half mq-inner">
+            <h2>Error % Distribution by Fixture</h2>
+            <canvas id="chart-mq-scatter"></canvas>
+          </div>
+          <div class="chart-box half mq-inner">
+            <h2>Mean Error % Trend</h2>
+            <canvas id="chart-mq-trend"></canvas>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top:14px">
+          <table id="tbl-mq">
+            <thead>
+              <tr>
+                <th>Fixture</th>
+                <th>N</th>
+                <th>Mean Error %</th>
+                <th>Std Dev %</th>
+                <th>Min %</th>
+                <th>Max %</th>
+                <th>Cpk</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- Recent runs -->
     <section class="section-row">
       <div class="chart-box full">

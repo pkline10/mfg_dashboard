@@ -55,6 +55,7 @@ class Measurement(db.Model):
     test_result_id = db.Column(db.Integer, db.ForeignKey("test_results.id", ondelete="CASCADE"), nullable=False, index=True)
     metric_name = db.Column(db.String(64), nullable=False)  # e.g. voltage_rms, current_rms, duty_cycle_pct
     value = db.Column(db.Float, nullable=False)
+    nominal = db.Column(db.Float)                            # reference/expected value (e.g. Chroma reading); enables error_pct = (value-nominal)/nominal*100
     unit = db.Column(db.String(16))                          # V, A, %, Hz, dB
     tolerance_min = db.Column(db.Float)
     tolerance_max = db.Column(db.Float)

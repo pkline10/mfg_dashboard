@@ -292,6 +292,25 @@ tr:hover td { background: var(--surface2); }
   flex-wrap: wrap;
 }
 
+/* ── Measurement Quality ─────────────────────────────────────────────── */
+.mq-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.mq-charts {
+  margin-top: 14px;
+}
+
+/* Remove double-border since inner chart-boxes sit inside an outer chart-box */
+.mq-inner {
+  border: none;
+  padding: 4px 0;
+}
+
 /* ── Footer ───────────────────────────────────────────────────────────── */
 footer {
   max-width: 1400px;

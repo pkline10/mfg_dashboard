@@ -49,8 +49,11 @@ class DashboardClient:
         results : list of dicts with keys:
             test_name, started_at (datetime), ended_at (datetime),
             duration_s (float), passed (bool), failure_reason (str|None),
-            measurements (list of {metric, value, unit, tolerance_min,
+            measurements (list of {metric, value, nominal, unit, tolerance_min,
                                    tolerance_max, passed})
+                Where nominal = the reference/expected value for this reading
+                (e.g. Chroma-measured voltage or current).  Enables error_pct
+                tracking per fixture on the dashboard.  Omit if not applicable.
 
         Returns run_id on success, None on failure (never raises).
         """

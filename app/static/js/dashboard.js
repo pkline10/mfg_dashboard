@@ -49,6 +49,7 @@ async function refreshAll() {
     loadCycleTime(days),
     loadFpyRty(days, gran),
     loadFailures(days),
+    loadMeasurements(days, gran),
   ]);
 
   runsPage = 1;
@@ -348,6 +349,164 @@ async function loadFpyRty(days, gran) {
   });
 }
 
+// ── Measurement Quality ────────────────────────────────────────────────────
+async function loadMeasurements(days, gran) {
+  const metricSel = qs("mq-metric-select");
+
+  // Populate metric dropdown once (or when empty after a period change with no data)
+  if (!metricSel.dataset.loaded) {
+    const metrics = await fetch(`/api/measurement_metrics?days=${days}`).then(r => r.json());
+    metricSel.innerHTML = metrics.length
+      ? metrics.map(m => `<option value="${m.metric}">${m.metric}${m.unit ? " (" + m.unit + ")" : ""}</option>`).join("")
+      : `<option value="">No data for this period</option>`;
+    if (metrics.length) metricSel.dataset.loaded = "1";
+  }
+
+  const metric = metricSel.value;
+  if (!metric) return;
+
+  const [mqData, trendData] = await Promise.all([
+    fetch(`/api/measurements?metric=${encodeURIComponent(metric)}&days=${days}`).then(r => r.json()),
+    fetch(`/api/measurement_trend?metric=${encodeURIComponent(metric)}&days=${days}&granularity=${gran}`).then(r => r.json()),
+  ]);
+
+  const fixtures = mqData.fixtures || [];
+
+  // ── Scatter: x = fixture index + deterministic jitter, y = error_pct ────
+  const scatterDatasets = fixtures.map((f, fi) => ({
+    label: f.fixture_id,
+    data: f.points.map((p, pi) => ({
+      x: fi + ((pi % 9) - 4) * 0.04,   // deterministic jitter ±0.16
+      y: p.error_pct,
+      run_id: p.run_id,
+      serial: p.serial,
+    })),
+    backgroundColor: FIXTURE_COLORS[fi % FIXTURE_COLORS.length] + "99",
+    borderColor:     FIXTURE_COLORS[fi % FIXTURE_COLORS.length],
+    pointRadius: 4,
+    pointHoverRadius: 6,
+  }));
+
+  // Add mean markers as a separate dataset per fixture
+  fixtures.forEach((f, fi) => {
+    scatterDatasets.push({
+      label: `${f.fixture_id} mean`,
+      data: [{ x: fi, y: f.mean_error_pct }],
+      backgroundColor: "#ffffff",
+      borderColor:     FIXTURE_COLORS[fi % FIXTURE_COLORS.length],
+      pointRadius: 8,
+      pointStyle: "crossRot",
+      pointHoverRadius: 10,
+    });
+  });
+
+  destroyChart("mqScatter");
+  charts.mqScatter = new Chart(qs("chart-mq-scatter"), {
+    type: "scatter",
+    data: { datasets: scatterDatasets },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              if (ctx.raw.serial) return ` ${ctx.raw.serial}: ${ctx.raw.y?.toFixed(3)}%`;
+              return ` mean: ${ctx.raw.y?.toFixed(3)}%`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: gridOpts(),
+          min: -0.5,
+          max: fixtures.length - 0.5,
+          ticks: {
+            stepSize: 1,
+            callback: v => {
+              const idx = Math.round(v);
+              return fixtures[idx] ? fixtures[idx].fixture_id : "";
+            },
+          },
+        },
+        y: {
+          grid: gridOpts(),
+          ticks: { callback: v => `${v}%` },
+          title: { display: true, text: "Error %", color: "#7b7fa8" },
+        },
+      },
+    },
+  });
+
+  // ── Trend: one line per fixture ───────────────────────────────────────────
+  const periods   = [...new Set(trendData.map(r => r.period))].sort();
+  const tFixtures = [...new Set(trendData.map(r => r.fixture_id))].sort();
+  const tIdx = {};
+  trendData.forEach(r => { tIdx[`${r.fixture_id}::${r.period}`] = r.mean_error_pct; });
+
+  const trendDatasets = tFixtures.map((fid, i) => ({
+    label: fid,
+    data: periods.map(p => tIdx[`${fid}::${p}`] ?? null),
+    borderColor:     FIXTURE_COLORS[i % FIXTURE_COLORS.length],
+    backgroundColor: FIXTURE_COLORS[i % FIXTURE_COLORS.length] + "22",
+    tension: 0.3,
+    pointRadius: 4,
+    fill: false,
+    spanGaps: true,
+  }));
+
+  // Zero-error reference line
+  trendDatasets.push({
+    label: "Zero error",
+    data: periods.map(() => 0),
+    borderColor: "#ffffff33",
+    borderDash: [4, 4],
+    pointRadius: 0,
+    fill: false,
+  });
+
+  destroyChart("mqTrend");
+  charts.mqTrend = new Chart(qs("chart-mq-trend"), {
+    type: "line",
+    data: { labels: periods, datasets: trendDatasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { grid: gridOpts() },
+        y: {
+          grid: gridOpts(),
+          ticks: { callback: v => `${v}%` },
+          title: { display: true, text: "Mean Error %", color: "#7b7fa8" },
+        },
+      },
+    },
+  });
+
+  // ── Summary table ─────────────────────────────────────────────────────────
+  const tbody = qs("tbl-mq").querySelector("tbody");
+  if (!fixtures.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No measurement data for this metric/period</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = fixtures.map(f => {
+    const cpkCol = f.cpk === null ? "" :
+      f.cpk >= 1.33 ? `color:${PASS_COLOR}` :
+      f.cpk >= 1.0  ? `color:#f59e0b` : `color:${FAIL_COLOR}`;
+    const errSign = v => (v > 0 ? "+" : "") + v.toFixed(3) + "%";
+    return `<tr>
+      <td>${f.fixture_id}</td>
+      <td>${f.n}</td>
+      <td>${errSign(f.mean_error_pct)}</td>
+      <td>±${f.std_error_pct.toFixed(3)}%</td>
+      <td>${errSign(f.min_error_pct)}</td>
+      <td>${errSign(f.max_error_pct)}</td>
+      <td style="${cpkCol}">${f.cpk ?? "—"}</td>
+    </tr>`;
+  }).join("");
+}
+
 // ── Failures ───────────────────────────────────────────────────────────────
 async function loadFailures(days) {
   const rows = await fetch(`/api/failures?days=${days}`).then(r => r.json());
@@ -466,6 +625,12 @@ qs("load-more-btn").addEventListener("click", () => {
 
 qs("filter-product").addEventListener("change", () => loadRuns(true));
 qs("filter-pass").addEventListener("change",   () => loadRuns(true));
+
+qs("mq-metric-select").addEventListener("change", () => {
+  const days = qs("period-select").value;
+  const gran = qs("gran-select").value;
+  loadMeasurements(days, gran);
+});
 
 // ── Initial load ───────────────────────────────────────────────────────────
 refreshAll();

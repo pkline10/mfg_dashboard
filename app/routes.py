@@ -443,6 +443,179 @@ def api_rty_trend():
 
 
 # ---------------------------------------------------------------------------
+# API: measurement quality — metric list, per-fixture distributions, trend
+# ---------------------------------------------------------------------------
+
+@main.route("/api/measurement_metrics")
+def api_measurement_metrics():
+    """Distinct metric names present in the selected period."""
+    start, end = _date_range()
+    rows = (
+        db.session.query(Measurement.metric_name, Measurement.unit)
+        .join(TestResult, Measurement.test_result_id == TestResult.id)
+        .join(TestRun, TestResult.run_id == TestRun.id)
+        .filter(TestRun.started_at.between(start, end))
+        .group_by(Measurement.metric_name, Measurement.unit)
+        .order_by(Measurement.metric_name)
+        .all()
+    )
+    return jsonify([{"metric": r.metric_name, "unit": r.unit or ""} for r in rows])
+
+
+@main.route("/api/measurements")
+def api_measurements():
+    """
+    Per-fixture distribution for a single metric.
+    Only returns rows where nominal is non-null so error_pct is meaningful.
+    error_pct = (value - nominal) / |nominal| * 100
+    """
+    start, end = _date_range()
+    metric = request.args.get("metric", "")
+    product = request.args.get("product")
+
+    if not metric:
+        return jsonify({"metric": metric, "fixtures": []})
+
+    q = (
+        db.session.query(
+            TestRun.fixture_id,
+            Measurement.value,
+            Measurement.nominal,
+            Measurement.passed,
+            Measurement.tolerance_min,
+            Measurement.tolerance_max,
+            TestRun.serial_number,
+            TestRun.id.label("run_id"),
+            TestRun.started_at,
+        )
+        .join(TestResult, Measurement.test_result_id == TestResult.id)
+        .join(TestRun, TestResult.run_id == TestRun.id)
+        .filter(
+            TestRun.started_at.between(start, end),
+            Measurement.metric_name == metric,
+            Measurement.nominal.isnot(None),
+            TestRun.fixture_id.isnot(None),
+        )
+    )
+    if product:
+        q = q.filter(TestRun.product == product.upper())
+
+    rows = q.order_by(TestRun.started_at).all()
+
+    by_fixture = defaultdict(list)
+    for r in rows:
+        by_fixture[r.fixture_id].append(r)
+
+    result = []
+    for fixture_id in sorted(by_fixture):
+        pts = by_fixture[fixture_id]
+        errors = [
+            (r.value - r.nominal) / abs(r.nominal) * 100
+            for r in pts if r.nominal
+        ]
+        values = [r.value for r in pts]
+        n = len(errors)
+        if n == 0:
+            continue
+
+        mean_err = sum(errors) / n
+        variance = sum((e - mean_err) ** 2 for e in errors) / max(n - 1, 1)
+        std_err = variance ** 0.5
+
+        # Cpk from raw value vs tolerance limits
+        cpk = None
+        tol_mins = [r.tolerance_min for r in pts if r.tolerance_min is not None]
+        tol_maxs = [r.tolerance_max for r in pts if r.tolerance_max is not None]
+        if tol_mins and tol_maxs and n > 1:
+            mean_val = sum(values) / n
+            std_val = (sum((v - mean_val) ** 2 for v in values) / (n - 1)) ** 0.5
+            if std_val > 0:
+                lsl = sum(tol_mins) / len(tol_mins)
+                usl = sum(tol_maxs) / len(tol_maxs)
+                cpu = (usl - mean_val) / (3 * std_val)
+                cpl = (mean_val - lsl) / (3 * std_val)
+                cpk = round(min(cpu, cpl), 2)
+
+        result.append({
+            "fixture_id": fixture_id,
+            "n": n,
+            "mean_error_pct": round(mean_err, 3),
+            "std_error_pct": round(std_err, 3),
+            "min_error_pct": round(min(errors), 3),
+            "max_error_pct": round(max(errors), 3),
+            "cpk": cpk,
+            "points": [
+                {
+                    "run_id": r.run_id,
+                    "serial": r.serial_number,
+                    "value": round(r.value, 4),
+                    "nominal": round(r.nominal, 4),
+                    "error_pct": round((r.value - r.nominal) / abs(r.nominal) * 100, 3),
+                    "passed": r.passed,
+                    "ts": r.started_at.isoformat() if r.started_at else None,
+                }
+                for r in pts
+            ],
+        })
+
+    return jsonify({"metric": metric, "fixtures": result})
+
+
+@main.route("/api/measurement_trend")
+def api_measurement_trend():
+    """Mean error % per fixture per period for a given metric (for drift detection)."""
+    start, end = _date_range()
+    metric = request.args.get("metric", "")
+    granularity = request.args.get("granularity", "week")
+
+    if not metric:
+        return jsonify([])
+
+    period_expr = (
+        func.to_char(TestRun.started_at, "YYYY-MM")
+        if granularity == "month"
+        else func.to_char(TestRun.started_at, "IYYY-IW")
+    )
+
+    rows = (
+        db.session.query(
+            period_expr.label("period"),
+            TestRun.fixture_id,
+            func.avg(Measurement.value).label("mean_value"),
+            func.avg(Measurement.nominal).label("mean_nominal"),
+            func.stddev_samp(Measurement.value).label("std_value"),
+            func.count(Measurement.id).label("n"),
+        )
+        .join(TestResult, Measurement.test_result_id == TestResult.id)
+        .join(TestRun, TestResult.run_id == TestRun.id)
+        .filter(
+            TestRun.started_at.between(start, end),
+            Measurement.metric_name == metric,
+            Measurement.nominal.isnot(None),
+            TestRun.fixture_id.isnot(None),
+        )
+        .group_by("period", TestRun.fixture_id)
+        .order_by("period")
+        .all()
+    )
+
+    return jsonify([
+        {
+            "period": r.period,
+            "fixture_id": r.fixture_id,
+            "mean_error_pct": round(
+                (float(r.mean_value) - float(r.mean_nominal)) / abs(float(r.mean_nominal)) * 100, 3
+            ) if r.mean_nominal else None,
+            "std_error_pct": round(
+                float(r.std_value or 0) / abs(float(r.mean_nominal or 1)) * 100, 3
+            ) if r.mean_nominal else None,
+            "n": int(r.n),
+        }
+        for r in rows
+    ])
+
+
+# ---------------------------------------------------------------------------
 # API: presigned S3 URL for a run's log file
 # ---------------------------------------------------------------------------
 
@@ -557,6 +730,7 @@ def api_ingest():
                 test_result_id=result.id,
                 metric_name=m.get("metric", "unknown"),
                 value=float(m["value"]),
+                nominal=float(m["nominal"]) if m.get("nominal") is not None else None,
                 unit=m.get("unit"),
                 tolerance_min=m.get("tolerance_min"),
                 tolerance_max=m.get("tolerance_max"),

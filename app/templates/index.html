@@ -91,6 +91,31 @@
       </div>
     </section>
 
+    <!-- RTY / FPY Analysis -->
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Rolled Throughput Yield (RTY) by Fixture</h2>
+        <p class="section-hint">
+          One fixture low while others are normal → fixture hardware issue &nbsp;|&nbsp;
+          All fixtures low together → component lot issue
+        </p>
+        <div id="rty-cards" class="rty-cards"></div>
+      </div>
+    </section>
+
+    <section class="section-row">
+      <div class="chart-box half">
+        <h2>First Pass Yield (FPY) by Test Stage</h2>
+        <p class="section-hint">Each bar group is one test stage; colors = fixtures. Short bar on one fixture only → fixture fault.</p>
+        <canvas id="chart-fpy"></canvas>
+      </div>
+      <div class="chart-box half">
+        <h2>RTY Trend by Fixture</h2>
+        <p class="section-hint">Lines diverging → fixture problem. Lines dropping in unison → component lot problem.</p>
+        <canvas id="chart-rty-trend"></canvas>
+      </div>
+    </section>
+
     <!-- Top failures -->
     <section class="section-row">
       <div class="chart-box half">

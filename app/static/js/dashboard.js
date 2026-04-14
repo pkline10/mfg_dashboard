@@ -6,11 +6,12 @@ Chart.defaults.borderColor = "#2e3150";
 Chart.defaults.font.family = "'Inter', 'Segoe UI', system-ui, sans-serif";
 Chart.defaults.font.size = 12;
 
-const PASS_COLOR  = "#27c98a";
-const FAIL_COLOR  = "#ef4444";
-const C1_COLOR    = "#4f8ef7";
-const C2_COLOR    = "#a78bfa";
-const GRID_COLOR  = "rgba(46,49,80,.6)";
+const PASS_COLOR    = "#27c98a";
+const FAIL_COLOR    = "#ef4444";
+const C1_COLOR      = "#4f8ef7";
+const C2_COLOR      = "#a78bfa";
+const GRID_COLOR    = "rgba(46,49,80,.6)";
+const FIXTURE_COLORS = ["#4f8ef7", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#38bdf8"];
 
 // ── State ──────────────────────────────────────────────────────────────────
 let charts = {};
@@ -46,6 +47,7 @@ async function refreshAll() {
     loadDaily(days),
     loadProduction(days, gran),
     loadCycleTime(days),
+    loadFpyRty(days, gran),
     loadFailures(days),
   ]);
 
@@ -225,6 +227,121 @@ async function loadCycleTime(days) {
           grid: gridOpts(),
           beginAtZero: false,
           ticks: { callback: v => fmtDur(v) },
+        },
+      },
+    },
+  });
+}
+
+// ── FPY / RTY ──────────────────────────────────────────────────────────────
+async function loadFpyRty(days, gran) {
+  const [fpyRows, rtyRows, rtyTrend] = await Promise.all([
+    fetch(`/api/fpy?days=${days}`).then(r => r.json()),
+    fetch(`/api/rty?days=${days}`).then(r => r.json()),
+    fetch(`/api/rty_trend?days=${days}&granularity=${gran}`).then(r => r.json()),
+  ]);
+
+  // ── RTY summary cards ────────────────────────────────────────────────────
+  const container = qs("rty-cards");
+  container.innerHTML = rtyRows.map(f => {
+    const rty = f.rty;
+    const cls = rty >= 90 ? "pass" : rty >= 75 ? "warn" : "fail";
+    const overall = rtyRows.find(x => x.fixture_id === "Overall");
+    const delta = f.fixture_id !== "Overall" && overall
+      ? (rty - overall.rty).toFixed(1)
+      : null;
+    const deltaHtml = delta !== null
+      ? `<span class="rty-delta ${parseFloat(delta) >= 0 ? "pos" : "neg"}">${parseFloat(delta) >= 0 ? "+" : ""}${delta}% vs avg</span>`
+      : "";
+    return `
+      <div class="rty-card ${cls}">
+        <div class="rty-fixture">${f.fixture_id}</div>
+        <div class="rty-value">${rty}%</div>
+        ${deltaHtml}
+        <div class="rty-stages">${f.stages.map(s =>
+          `<div class="rty-stage ${s.fpy < 90 ? 'low' : ''}">
+             <span>${s.test_name.replace(/_test$|_check$/, "")}</span>
+             <span>${s.fpy}%</span>
+           </div>`
+        ).join("")}</div>
+      </div>`;
+  }).join("");
+
+  // ── FPY grouped bar (test stage on y-axis, one dataset per fixture) ──────
+  const fixtures = [...new Set(fpyRows.map(r => r.fixture_id))].sort();
+  const testNames = [...new Set(fpyRows.map(r => r.test_name))].sort();
+
+  // Index for quick lookup
+  const idx = {};
+  fpyRows.forEach(r => { idx[`${r.fixture_id}::${r.test_name}`] = r.fpy; });
+
+  const fpyDatasets = fixtures.map((fid, i) => ({
+    label: fid,
+    data: testNames.map(t => idx[`${fid}::${t}`] ?? null),
+    backgroundColor: FIXTURE_COLORS[i % FIXTURE_COLORS.length] + "bb",
+    borderColor:     FIXTURE_COLORS[i % FIXTURE_COLORS.length],
+    borderWidth: 1,
+  }));
+
+  destroyChart("fpy");
+  charts.fpy = new Chart(qs("chart-fpy"), {
+    type: "bar",
+    data: {
+      labels: testNames.map(t => t.replace(/_test$|_check$/, "")),
+      datasets: fpyDatasets,
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.x ?? "—"}%` },
+        },
+      },
+      scales: {
+        x: {
+          grid: gridOpts(),
+          min: 80,
+          max: 100,
+          ticks: { callback: v => `${v}%` },
+        },
+        y: { grid: gridOpts() },
+      },
+    },
+  });
+
+  // ── RTY trend line (one line per fixture) ────────────────────────────────
+  const periods   = [...new Set(rtyTrend.map(r => r.period))].sort();
+  const tFixtures = [...new Set(rtyTrend.map(r => r.fixture_id))].sort();
+  const rtyIdx    = {};
+  rtyTrend.forEach(r => { rtyIdx[`${r.fixture_id}::${r.period}`] = r.rty; });
+
+  const rtyDatasets = tFixtures.map((fid, i) => ({
+    label: fid,
+    data: periods.map(p => rtyIdx[`${fid}::${p}`] ?? null),
+    borderColor: FIXTURE_COLORS[i % FIXTURE_COLORS.length],
+    backgroundColor: FIXTURE_COLORS[i % FIXTURE_COLORS.length] + "22",
+    tension: 0.3,
+    pointRadius: 4,
+    fill: false,
+    spanGaps: true,
+  }));
+
+  destroyChart("rtyTrend");
+  charts.rtyTrend = new Chart(qs("chart-rty-trend"), {
+    type: "line",
+    data: { labels: periods, datasets: rtyDatasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { grid: gridOpts() },
+        y: {
+          grid: gridOpts(),
+          min: 50,
+          max: 100,
+          ticks: { callback: v => `${v}%` },
         },
       },
     },

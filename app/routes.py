@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, jsonify, request
 from sqlalchemy import func, case, and_
@@ -257,6 +258,180 @@ def api_runs():
             for r in pagination.items
         ],
     })
+
+
+# ---------------------------------------------------------------------------
+# API: First Pass Yield (FPY) per test stage per fixture
+# ---------------------------------------------------------------------------
+
+@main.route("/api/fpy")
+def api_fpy():
+    """
+    FPY = % of units that pass a given test stage on the first attempt.
+    Grouped by test_name × fixture_id so you can compare fixtures side-by-side.
+    A low FPY on one fixture only → fixture problem.
+    A low FPY across all fixtures → component lot problem.
+    """
+    start, end = _date_range()
+
+    rows = (
+        db.session.query(
+            TestResult.test_name,
+            TestRun.fixture_id,
+            TestRun.product,
+            func.count(TestResult.id).label("total"),
+            func.sum(case((TestResult.passed.is_(True), 1), else_=0)).label("passed"),
+        )
+        .join(TestRun, TestResult.run_id == TestRun.id)
+        .filter(
+            TestRun.started_at.between(start, end),
+            TestRun.fixture_id.isnot(None),
+        )
+        .group_by(TestResult.test_name, TestRun.fixture_id, TestRun.product)
+        .order_by(TestResult.test_name, TestRun.fixture_id)
+        .all()
+    )
+
+    return jsonify([
+        {
+            "test_name": r.test_name,
+            "fixture_id": r.fixture_id,
+            "product": r.product,
+            "total": int(r.total),
+            "passed": int(r.passed or 0),
+            "fpy": round(int(r.passed or 0) / int(r.total) * 100, 1) if r.total else 0,
+        }
+        for r in rows
+    ])
+
+
+# ---------------------------------------------------------------------------
+# API: Rolled Throughput Yield (RTY) per fixture
+# ---------------------------------------------------------------------------
+
+@main.route("/api/rty")
+def api_rty():
+    """
+    RTY = product of FPY across all test stages.
+    Represents the probability a unit passes every stage on the first attempt.
+    Returned for each fixture + an 'Overall' entry.
+    """
+    start, end = _date_range()
+
+    def _stage_rows(extra_filters):
+        return (
+            db.session.query(
+                TestResult.test_name,
+                func.count(TestResult.id).label("total"),
+                func.sum(case((TestResult.passed.is_(True), 1), else_=0)).label("passed"),
+            )
+            .join(TestRun, TestResult.run_id == TestRun.id)
+            .filter(TestRun.started_at.between(start, end), *extra_filters)
+            .group_by(TestResult.test_name)
+            .all()
+        )
+
+    def _rty_from_rows(stage_rows):
+        rty = 1.0
+        stages = []
+        for r in stage_rows:
+            total = int(r.total)
+            passed = int(r.passed or 0)
+            fpy = passed / total if total else 0
+            rty *= fpy
+            stages.append({
+                "test_name": r.test_name,
+                "fpy": round(fpy * 100, 1),
+                "total": total,
+                "passed": passed,
+            })
+        return round(rty * 100, 1), sorted(stages, key=lambda x: x["test_name"])
+
+    # Per-fixture
+    fixtures = (
+        db.session.query(TestRun.fixture_id)
+        .filter(
+            TestRun.started_at.between(start, end),
+            TestRun.fixture_id.isnot(None),
+        )
+        .distinct()
+        .order_by(TestRun.fixture_id)
+        .all()
+    )
+
+    result = []
+    for (fixture_id,) in fixtures:
+        stage_rows = _stage_rows([TestRun.fixture_id == fixture_id])
+        rty, stages = _rty_from_rows(stage_rows)
+        result.append({"fixture_id": fixture_id, "rty": rty, "stages": stages})
+
+    # Overall (all fixtures)
+    overall_rows = _stage_rows([])
+    overall_rty, overall_stages = _rty_from_rows(overall_rows)
+    result.insert(0, {"fixture_id": "Overall", "rty": overall_rty, "stages": overall_stages})
+
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# API: RTY trend over time per fixture
+# ---------------------------------------------------------------------------
+
+@main.route("/api/rty_trend")
+def api_rty_trend():
+    """
+    RTY calculated per fixture per week (or month).
+    Plot all fixtures on the same chart:
+      - One line drops while others stay flat  →  fixture hardware issue
+      - All lines drop together               →  component lot issue
+    """
+    start, end = _date_range()
+    granularity = request.args.get("granularity", "week")
+
+    period_expr = (
+        func.to_char(TestRun.started_at, "YYYY-MM")
+        if granularity == "month"
+        else func.to_char(TestRun.started_at, "IYYY-IW")
+    )
+
+    rows = (
+        db.session.query(
+            period_expr.label("period"),
+            TestResult.test_name,
+            TestRun.fixture_id,
+            func.count(TestResult.id).label("total"),
+            func.sum(case((TestResult.passed.is_(True), 1), else_=0)).label("passed"),
+        )
+        .join(TestRun, TestResult.run_id == TestRun.id)
+        .filter(
+            TestRun.started_at.between(start, end),
+            TestRun.fixture_id.isnot(None),
+        )
+        .group_by("period", TestResult.test_name, TestRun.fixture_id)
+        .order_by("period")
+        .all()
+    )
+
+    # Accumulate: period → fixture → test_name → fpy
+    data = defaultdict(lambda: defaultdict(dict))
+    for r in rows:
+        total = int(r.total)
+        passed = int(r.passed or 0)
+        data[r.period][r.fixture_id][r.test_name] = passed / total if total else 0
+
+    result = []
+    for period in sorted(data):
+        for fixture_id in sorted(data[period]):
+            rty = 1.0
+            for fpy in data[period][fixture_id].values():
+                rty *= fpy
+            result.append({
+                "period": period,
+                "fixture_id": fixture_id,
+                "rty": round(rty * 100, 1),
+            })
+
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------

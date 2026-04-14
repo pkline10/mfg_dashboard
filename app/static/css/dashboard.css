@@ -205,6 +205,76 @@ tr:hover td { background: var(--surface2); }
 .badge.pass { background: rgba(39,201,138,.15); color: var(--pass); }
 .badge.fail { background: rgba(239,68,68,.15);  color: var(--fail); }
 
+/* ── Section hint text ────────────────────────────────────────────────── */
+.section-hint {
+  font-size: .78rem;
+  color: var(--text-muted);
+  margin-top: -6px;
+}
+
+/* ── RTY cards ────────────────────────────────────────────────────────── */
+.rty-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.rty-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  min-width: 180px;
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rty-card.pass { border-color: var(--pass); }
+.rty-card.warn { border-color: var(--warn); }
+.rty-card.fail { border-color: var(--fail); }
+
+.rty-fixture {
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+}
+
+.rty-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.rty-card.pass .rty-value { color: var(--pass); }
+.rty-card.warn .rty-value { color: var(--warn); }
+.rty-card.fail .rty-value { color: var(--fail); }
+
+.rty-delta {
+  font-size: .78rem;
+  font-weight: 600;
+}
+.rty-delta.pos { color: var(--pass); }
+.rty-delta.neg { color: var(--fail); }
+
+.rty-stages {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.rty-stage {
+  display: flex;
+  justify-content: space-between;
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+.rty-stage.low { color: var(--fail); font-weight: 600; }
+
 /* ── Run filters ──────────────────────────────────────────────────────── */
 .run-filters {
   display: flex;

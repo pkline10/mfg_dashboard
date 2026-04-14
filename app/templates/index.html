@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MFG Dashboard — Emporia Energy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>MFG Dashboard</h1>
+      <div class="controls">
+        <label>Period:
+          <select id="period-select">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </label>
+        <label>Granularity:
+          <select id="gran-select">
+            <option value="week" selected>Weekly</option>
+            <option value="month">Monthly</option>
+          </select>
+        </label>
+        <button id="refresh-btn">Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Summary cards -->
+    <section class="cards" id="cards-section">
+      <div class="card" id="card-total">
+        <div class="card-label">Units Tested</div>
+        <div class="card-value" id="val-total">—</div>
+        <div class="card-sub" id="sub-total"></div>
+      </div>
+      <div class="card pass" id="card-passed">
+        <div class="card-label">Passed</div>
+        <div class="card-value" id="val-passed">—</div>
+        <div class="card-sub" id="sub-pass-rate"></div>
+      </div>
+      <div class="card fail" id="card-failed">
+        <div class="card-label">Failed</div>
+        <div class="card-value" id="val-failed">—</div>
+        <div class="card-sub" id="sub-fail-rate"></div>
+      </div>
+      <div class="card" id="card-cycle">
+        <div class="card-label">Avg Cycle Time</div>
+        <div class="card-value" id="val-cycle">—</div>
+        <div class="card-sub" id="sub-cycle"></div>
+      </div>
+    </section>
+
+    <!-- By-product breakdown -->
+    <section class="section-row">
+      <div class="chart-box half">
+        <h2>Production by Product</h2>
+        <canvas id="chart-product-bar"></canvas>
+      </div>
+      <div class="chart-box half">
+        <h2>Pass / Fail Split</h2>
+        <canvas id="chart-passfail-donut"></canvas>
+      </div>
+    </section>
+
+    <!-- Daily throughput -->
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Daily Units Tested</h2>
+        <canvas id="chart-daily"></canvas>
+      </div>
+    </section>
+
+    <!-- Production trend (weekly/monthly) -->
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Production Trend (<span id="gran-label">Weekly</span>)</h2>
+        <canvas id="chart-production"></canvas>
+      </div>
+    </section>
+
+    <!-- Cycle time trend -->
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Cycle Time Trend (avg seconds per day)</h2>
+        <canvas id="chart-cycle"></canvas>
+      </div>
+    </section>
+
+    <!-- Top failures -->
+    <section class="section-row">
+      <div class="chart-box half">
+        <h2>Top Failing Tests</h2>
+        <canvas id="chart-failures"></canvas>
+      </div>
+      <div class="chart-box half">
+        <h2>Failure Rate by Test</h2>
+        <div class="table-wrap">
+          <table id="tbl-failures">
+            <thead>
+              <tr>
+                <th>Test</th>
+                <th>Product</th>
+                <th>Runs</th>
+                <th>Failures</th>
+                <th>Fail %</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent runs -->
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Recent Test Runs</h2>
+        <div class="run-filters">
+          <select id="filter-product">
+            <option value="">All products</option>
+            <option value="C1">C1</option>
+            <option value="C2">C2</option>
+          </select>
+          <select id="filter-pass">
+            <option value="">All results</option>
+            <option value="true">Pass only</option>
+            <option value="false">Fail only</option>
+          </select>
+          <button id="load-more-btn">Load more</button>
+        </div>
+        <div class="table-wrap">
+          <table id="tbl-runs">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Serial</th>
+                <th>Product</th>
+                <th>Fixture</th>
+                <th>Phase</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Result</th>
+                <th>Failure Reason</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Emporia Energy — Manufacturing Dashboard</span>
+    <span id="last-refresh"></span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

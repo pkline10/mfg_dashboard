@@ -1,0 +1,325 @@
+"use strict";
+
+// ── Chart.js global defaults ───────────────────────────────────────────────
+Chart.defaults.color = "#7b7fa8";
+Chart.defaults.borderColor = "#2e3150";
+Chart.defaults.font.family = "'Inter', 'Segoe UI', system-ui, sans-serif";
+Chart.defaults.font.size = 12;
+
+const PASS_COLOR  = "#27c98a";
+const FAIL_COLOR  = "#ef4444";
+const C1_COLOR    = "#4f8ef7";
+const C2_COLOR    = "#a78bfa";
+const GRID_COLOR  = "rgba(46,49,80,.6)";
+
+// ── State ──────────────────────────────────────────────────────────────────
+let charts = {};
+let runsPage = 1;
+let runsTotal = 0;
+
+// ── Utility helpers ────────────────────────────────────────────────────────
+const fmtDur = s => s == null ? "—" : `${Math.floor(s/60)}m ${Math.round(s%60)}s`;
+const fmtDt  = iso => iso ? new Date(iso).toLocaleString() : "—";
+const qs     = id => document.getElementById(id);
+
+function makeDataset(label, data, color, extra = {}) {
+  return { label, data, backgroundColor: color + "cc", borderColor: color,
+           borderWidth: 2, ...extra };
+}
+
+function gridOpts() {
+  return { color: GRID_COLOR };
+}
+
+function destroyChart(key) {
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+}
+
+// ── Main refresh ───────────────────────────────────────────────────────────
+async function refreshAll() {
+  const days = qs("period-select").value;
+  const gran = qs("gran-select").value;
+  qs("gran-label").textContent = gran === "month" ? "Monthly" : "Weekly";
+
+  await Promise.all([
+    loadSummary(days),
+    loadDaily(days),
+    loadProduction(days, gran),
+    loadCycleTime(days),
+    loadFailures(days),
+  ]);
+
+  runsPage = 1;
+  await loadRuns(true);
+
+  qs("last-refresh").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+}
+
+// ── Summary cards ──────────────────────────────────────────────────────────
+async function loadSummary(days) {
+  const data = await fetch(`/api/summary?days=${days}`).then(r => r.json());
+
+  qs("val-total").textContent  = data.total.toLocaleString();
+  qs("val-passed").textContent = data.passed.toLocaleString();
+  qs("val-failed").textContent = data.failed.toLocaleString();
+  qs("sub-total").textContent  = `Last ${days} days`;
+  qs("sub-pass-rate").textContent = `${data.pass_rate}% pass rate`;
+  qs("sub-fail-rate").textContent = `${(100 - data.pass_rate).toFixed(1)}% fail rate`;
+
+  const avgCycle = data.by_product.reduce((s, r) => s + (r.avg_cycle_s * r.total), 0) /
+                   (data.total || 1);
+  qs("val-cycle").textContent  = fmtDur(avgCycle);
+  qs("sub-cycle").textContent  = "across all products";
+
+  // Product bar chart
+  destroyChart("product");
+  const products = data.by_product.map(r => r.product);
+  charts.product = new Chart(qs("chart-product-bar"), {
+    type: "bar",
+    data: {
+      labels: products,
+      datasets: [
+        makeDataset("Passed", data.by_product.map(r => r.passed), PASS_COLOR),
+        makeDataset("Failed", data.by_product.map(r => r.failed), FAIL_COLOR),
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { stacked: true, grid: gridOpts() },
+        y: { stacked: true, grid: gridOpts(), beginAtZero: true },
+      },
+    },
+  });
+
+  // Pass/fail donut
+  destroyChart("donut");
+  charts.donut = new Chart(qs("chart-passfail-donut"), {
+    type: "doughnut",
+    data: {
+      labels: ["Passed", "Failed"],
+      datasets: [{
+        data: [data.passed, data.failed],
+        backgroundColor: [PASS_COLOR + "cc", FAIL_COLOR + "cc"],
+        borderColor: [PASS_COLOR, FAIL_COLOR],
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      cutout: "65%",
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const pct = ((ctx.parsed / data.total) * 100).toFixed(1);
+              return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ── Daily throughput ───────────────────────────────────────────────────────
+async function loadDaily(days) {
+  const rows = await fetch(`/api/daily?days=${days}`).then(r => r.json());
+
+  // Pivot by product
+  const days_set = [...new Set(rows.map(r => r.day))].sort();
+  const products = [...new Set(rows.map(r => r.product))];
+  const byProduct = {};
+  products.forEach(p => { byProduct[p] = { passed: {}, failed: {} }; });
+  rows.forEach(r => {
+    byProduct[r.product].passed[r.day] = r.passed;
+    byProduct[r.product].failed[r.day] = r.failed;
+  });
+
+  const colors = { C1: C1_COLOR, C2: C2_COLOR };
+  const datasets = [];
+  products.forEach((p, i) => {
+    const col = colors[p] || `hsl(${i * 80}, 70%, 60%)`;
+    datasets.push(makeDataset(`${p} Pass`, days_set.map(d => byProduct[p].passed[d] || 0), col, { stack: p }));
+    datasets.push(makeDataset(`${p} Fail`, days_set.map(d => byProduct[p].failed[d] || 0), FAIL_COLOR, { stack: p, borderColor: FAIL_COLOR }));
+  });
+
+  destroyChart("daily");
+  charts.daily = new Chart(qs("chart-daily"), {
+    type: "bar",
+    data: { labels: days_set, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { grid: gridOpts() },
+        y: { grid: gridOpts(), beginAtZero: true },
+      },
+    },
+  });
+}
+
+// ── Production trend ───────────────────────────────────────────────────────
+async function loadProduction(days, gran) {
+  const rows = await fetch(`/api/production?days=${days}&granularity=${gran}`).then(r => r.json());
+
+  const periods  = [...new Set(rows.map(r => r.period))].sort();
+  const products = [...new Set(rows.map(r => r.product))];
+  const byProduct = {};
+  products.forEach(p => { byProduct[p] = {}; });
+  rows.forEach(r => { byProduct[r.product][r.period] = r.total; });
+
+  const colors = { C1: C1_COLOR, C2: C2_COLOR };
+  const datasets = products.map((p, i) => {
+    const col = colors[p] || `hsl(${i * 80}, 70%, 60%)`;
+    return makeDataset(p, periods.map(pd => byProduct[p][pd] || 0), col, {
+      type: "line", fill: true, tension: 0.3, pointRadius: 4,
+    });
+  });
+
+  destroyChart("production");
+  charts.production = new Chart(qs("chart-production"), {
+    type: "line",
+    data: { labels: periods, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { grid: gridOpts() },
+        y: { grid: gridOpts(), beginAtZero: true },
+      },
+    },
+  });
+}
+
+// ── Cycle time ─────────────────────────────────────────────────────────────
+async function loadCycleTime(days) {
+  const rows = await fetch(`/api/cycle_time?days=${days}`).then(r => r.json());
+
+  const days_set = [...new Set(rows.map(r => r.day))].sort();
+  const products = [...new Set(rows.map(r => r.product))];
+  const byProduct = {};
+  products.forEach(p => { byProduct[p] = {}; });
+  rows.forEach(r => { byProduct[r.product][r.day] = r.avg_s; });
+
+  const colors = { C1: C1_COLOR, C2: C2_COLOR };
+  const datasets = products.map((p, i) => {
+    const col = colors[p] || `hsl(${i * 80}, 70%, 60%)`;
+    return makeDataset(`${p} avg`, days_set.map(d => byProduct[p][d] || null), col, {
+      tension: 0.3, pointRadius: 3, fill: false, spanGaps: true,
+    });
+  });
+
+  destroyChart("cycle");
+  charts.cycle = new Chart(qs("chart-cycle"), {
+    type: "line",
+    data: { labels: days_set, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { grid: gridOpts() },
+        y: {
+          grid: gridOpts(),
+          beginAtZero: false,
+          ticks: { callback: v => fmtDur(v) },
+        },
+      },
+    },
+  });
+}
+
+// ── Failures ───────────────────────────────────────────────────────────────
+async function loadFailures(days) {
+  const rows = await fetch(`/api/failures?days=${days}`).then(r => r.json());
+
+  const top10 = rows.slice(0, 10);
+
+  destroyChart("failures");
+  charts.failures = new Chart(qs("chart-failures"), {
+    type: "bar",
+    data: {
+      labels: top10.map(r => `${r.test_name} (${r.product})`),
+      datasets: [makeDataset("Failures", top10.map(r => r.failures), FAIL_COLOR)],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: gridOpts(), beginAtZero: true },
+        y: { grid: gridOpts() },
+      },
+    },
+  });
+
+  // Table
+  const tbody = qs("tbl-failures").querySelector("tbody");
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.test_name}</td>
+      <td>${r.product}</td>
+      <td>${r.total_runs}</td>
+      <td>${r.failures}</td>
+      <td style="color:${r.fail_rate > 10 ? FAIL_COLOR : r.fail_rate > 5 ? "#f59e0b" : PASS_COLOR}">
+        ${r.fail_rate}%
+      </td>
+    </tr>
+  `).join("");
+}
+
+// ── Recent runs ────────────────────────────────────────────────────────────
+async function loadRuns(reset = false) {
+  if (reset) {
+    runsPage = 1;
+    qs("tbl-runs").querySelector("tbody").innerHTML = "";
+  }
+
+  const product  = qs("filter-product").value;
+  const passed   = qs("filter-pass").value;
+  const params   = new URLSearchParams({ page: runsPage, per_page: 50 });
+  if (product) params.set("product", product);
+  if (passed !== "") params.set("passed", passed);
+
+  const data = await fetch(`/api/runs?${params}`).then(r => r.json());
+  runsTotal = data.total;
+
+  const tbody = qs("tbl-runs").querySelector("tbody");
+  data.runs.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td><code>${r.serial}</code></td>
+      <td>${r.product}</td>
+      <td>${r.fixture || "—"}</td>
+      <td>${r.phase || "—"}</td>
+      <td>${fmtDt(r.started_at)}</td>
+      <td>${fmtDur(r.duration_s)}</td>
+      <td><span class="badge ${r.pass ? 'pass' : 'fail'}">${r.pass ? "PASS" : "FAIL"}</span></td>
+      <td style="color:#ef4444;font-size:.78rem">${r.failure_reason || ""}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const loaded = (runsPage - 1) * 50 + data.runs.length;
+  qs("load-more-btn").style.display = loaded >= runsTotal ? "none" : "inline-block";
+  qs("load-more-btn").textContent = `Load more (${runsTotal - loaded} remaining)`;
+}
+
+// ── Event listeners ────────────────────────────────────────────────────────
+qs("refresh-btn").addEventListener("click", refreshAll);
+qs("period-select").addEventListener("change", refreshAll);
+qs("gran-select").addEventListener("change", refreshAll);
+
+qs("load-more-btn").addEventListener("click", () => {
+  runsPage++;
+  loadRuns(false);
+});
+
+qs("filter-product").addEventListener("change", () => loadRuns(true));
+qs("filter-pass").addEventListener("change",   () => loadRuns(true));
+
+// ── Initial load ───────────────────────────────────────────────────────────
+refreshAll();

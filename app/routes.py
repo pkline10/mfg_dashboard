@@ -1,6 +1,8 @@
+import gzip
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, jsonify, request, current_app
+from flask import Blueprint, render_template, jsonify, request, current_app, Response
 from sqlalchemy import func, case, and_
 from app import db
 from app.models import TestRun, TestResult, Measurement
@@ -625,6 +627,12 @@ def api_log_url(run_id):
     if not run.log_s3_key:
         return jsonify({"error": "no log attached to this run"}), 404
 
+    # Local dev mode — serve directly from filesystem
+    local_dir = current_app.config.get("LOCAL_LOG_DIR", "")
+    if local_dir:
+        return jsonify({"url": f"/api/runs/{run_id}/log", "expires_in_s": None})
+
+    # Production — presigned S3 URL
     if not _boto3_available:
         return jsonify({"error": "boto3 not installed on server"}), 503
 
@@ -642,6 +650,34 @@ def api_log_url(run_id):
         return jsonify({"url": url, "expires_in_s": expiry})
     except (BotoCoreError, ClientError) as exc:
         return jsonify({"error": str(exc)}), 502
+
+
+@main.route("/api/runs/<int:run_id>/log")
+def api_log_file(run_id):
+    """Serve a log file from the local directory (dev/staging only)."""
+    local_dir = current_app.config.get("LOCAL_LOG_DIR", "")
+    if not local_dir:
+        return jsonify({"error": "local log serving not configured — use log_url for S3"}), 404
+
+    run = db.get_or_404(TestRun, run_id)
+    if not run.log_s3_key:
+        return jsonify({"error": "no log attached to this run"}), 404
+
+    full_path = os.path.join(local_dir, run.log_s3_key)
+    if not os.path.exists(full_path):
+        return jsonify({"error": "log file not found on disk"}), 404
+
+    try:
+        with gzip.open(full_path, "rt", encoding="utf-8") as f:
+            content = f.read()
+        filename = f"run_{run_id}_{run.serial_number}.log"
+        return Response(
+            content,
+            mimetype="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as exc:
+        return jsonify({"error": f"could not read log: {exc}"}), 500
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ User=mbruckner
 WorkingDirectory=/home/mbruckner/mfg_dashboard
 Environment="DATABASE_URL=postgresql://emporia:emporia_dev@localhost/mfg_dashboard"
 Environment="SECRET_KEY=change-me-in-production"
+Environment="LOCAL_LOG_DIR=/home/mbruckner/mfg_logs"
 ExecStart=/home/mbruckner/mfg_dashboard/.venv/bin/gunicorn -w 2 -b 0.0.0.0:5001 --timeout 60 "run:app"
 Restart=on-failure
 RestartSec=5

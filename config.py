@@ -7,6 +7,8 @@ class Config:
     AWS_S3_BUCKET = os.environ.get("AWS_S3_BUCKET", "emporia-mfg-logs")
     AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
     LOG_URL_EXPIRY_S = int(os.environ.get("LOG_URL_EXPIRY_S", 3600))  # presigned URL TTL
+    # If set, serve log files from this local directory instead of S3 (dev/staging only)
+    LOCAL_LOG_DIR = os.environ.get("LOCAL_LOG_DIR", "")
 
 
 class ProductionConfig(Config):

@@ -1,0 +1,18 @@
+[Unit]
+Description=MFG Dashboard MQTT Bridge
+After=network.target mosquitto.service mfg_dashboard.service
+Wants=mosquitto.service
+
+[Service]
+User=mbruckner
+WorkingDirectory=/home/mbruckner/mfg_dashboard
+Environment="MQTT_HOST=localhost"
+Environment="MQTT_PORT=1883"
+Environment="MQTT_TOPIC_ROOT=mfg/results"
+Environment="INGEST_URL=http://localhost:5001/api/ingest"
+ExecStart=/home/mbruckner/mfg_dashboard/.venv/bin/python scripts/mqtt_bridge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

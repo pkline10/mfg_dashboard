@@ -1,9 +1,16 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify, request, current_app
 from sqlalchemy import func, case, and_
 from app import db
 from app.models import TestRun, TestResult, Measurement
+
+try:
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+    _boto3_available = True
+except ImportError:
+    _boto3_available = False
 
 main = Blueprint("main", __name__)
 
@@ -254,6 +261,7 @@ def api_runs():
                 "duration_s": r.duration_s,
                 "pass": r.overall_pass,
                 "failure_reason": r.failure_reason,
+                "has_log": bool(r.log_s3_key),
             }
             for r in pagination.items
         ],
@@ -435,6 +443,35 @@ def api_rty_trend():
 
 
 # ---------------------------------------------------------------------------
+# API: presigned S3 URL for a run's log file
+# ---------------------------------------------------------------------------
+
+@main.route("/api/runs/<int:run_id>/log_url")
+def api_log_url(run_id):
+    run = db.get_or_404(TestRun, run_id)
+    if not run.log_s3_key:
+        return jsonify({"error": "no log attached to this run"}), 404
+
+    if not _boto3_available:
+        return jsonify({"error": "boto3 not installed on server"}), 503
+
+    bucket = current_app.config["AWS_S3_BUCKET"]
+    region = current_app.config["AWS_REGION"]
+    expiry = current_app.config["LOG_URL_EXPIRY_S"]
+
+    try:
+        s3 = boto3.client("s3", region_name=region)
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": run.log_s3_key},
+            ExpiresIn=expiry,
+        )
+        return jsonify({"url": url, "expires_in_s": expiry})
+    except (BotoCoreError, ClientError) as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+# ---------------------------------------------------------------------------
 # API: ingest — POST test results from the fixture harness
 # ---------------------------------------------------------------------------
 
@@ -497,6 +534,7 @@ def api_ingest():
         duration_s=data.get("duration_s"),
         overall_pass=bool(data["overall_pass"]),
         failure_reason=data.get("failure_reason"),
+        log_s3_key=data.get("log_s3_key"),
     )
     db.session.add(run)
     db.session.flush()  # get run.id before inserting children

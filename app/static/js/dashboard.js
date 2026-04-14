@@ -406,6 +406,9 @@ async function loadRuns(reset = false) {
   const tbody = qs("tbl-runs").querySelector("tbody");
   data.runs.forEach(r => {
     const tr = document.createElement("tr");
+    const logCell = r.has_log
+      ? `<a class="log-link" href="#" data-run-id="${r.id}">Download</a>`
+      : `<span style="color:var(--text-muted)">—</span>`;
     tr.innerHTML = `
       <td>${r.id}</td>
       <td><code>${r.serial}</code></td>
@@ -416,6 +419,7 @@ async function loadRuns(reset = false) {
       <td>${fmtDur(r.duration_s)}</td>
       <td><span class="badge ${r.pass ? 'pass' : 'fail'}">${r.pass ? "PASS" : "FAIL"}</span></td>
       <td style="color:#ef4444;font-size:.78rem">${r.failure_reason || ""}</td>
+      <td>${logCell}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -424,6 +428,31 @@ async function loadRuns(reset = false) {
   qs("load-more-btn").style.display = loaded >= runsTotal ? "none" : "inline-block";
   qs("load-more-btn").textContent = `Load more (${runsTotal - loaded} remaining)`;
 }
+
+// ── Log download (presigned S3 URL, fetched on click) ─────────────────────
+document.addEventListener("click", async e => {
+  const link = e.target.closest(".log-link");
+  if (!link) return;
+  e.preventDefault();
+
+  const runId = link.dataset.runId;
+  link.textContent = "…";
+
+  try {
+    const resp = await fetch(`/api/runs/${runId}/log_url`);
+    if (!resp.ok) {
+      const err = await resp.json();
+      alert(`Could not get log URL: ${err.error}`);
+      link.textContent = "Download";
+      return;
+    }
+    const { url } = await resp.json();
+    window.open(url, "_blank");
+  } catch (err) {
+    alert(`Log fetch failed: ${err}`);
+  }
+  link.textContent = "Download";
+});
 
 // ── Event listeners ────────────────────────────────────────────────────────
 qs("refresh-btn").addEventListener("click", refreshAll);

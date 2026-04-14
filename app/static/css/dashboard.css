@@ -275,6 +275,15 @@ tr:hover td { background: var(--surface2); }
 }
 .rty-stage.low { color: var(--fail); font-weight: 600; }
 
+/* ── Log download link ────────────────────────────────────────────────── */
+.log-link {
+  color: var(--accent);
+  font-size: .78rem;
+  text-decoration: none;
+  font-weight: 600;
+}
+.log-link:hover { text-decoration: underline; }
+
 /* ── Run filters ──────────────────────────────────────────────────────── */
 .run-filters {
   display: flex;

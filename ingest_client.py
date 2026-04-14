@@ -39,6 +39,7 @@ class DashboardClient:
         overall_pass: bool,
         failure_reason: Optional[str],
         results: list,
+        log_s3_key: Optional[str] = None,
     ) -> Optional[int]:
         """
         Post a completed test run to /api/ingest.
@@ -63,6 +64,7 @@ class DashboardClient:
             "duration_s": (ended_at - started_at).total_seconds(),
             "overall_pass": overall_pass,
             "failure_reason": failure_reason,
+            "log_s3_key": log_s3_key,
             "results": [
                 {
                     "test_name": r["test_name"],

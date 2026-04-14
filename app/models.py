@@ -16,6 +16,7 @@ class TestRun(db.Model):
     duration_s = db.Column(db.Float)
     overall_pass = db.Column(db.Boolean, nullable=False)
     failure_reason = db.Column(db.Text)                 # first failing test name or message
+    log_s3_key = db.Column(db.String(256))              # e.g. logs/2024/07/SN123456/42.log
 
     results = db.relationship("TestResult", back_populates="run", cascade="all, delete-orphan")
 

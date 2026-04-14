@@ -570,7 +570,7 @@ async function loadRuns(reset = false) {
       : `<span style="color:var(--text-muted)">—</span>`;
     tr.innerHTML = `
       <td>${r.id}</td>
-      <td><code>${r.serial}</code></td>
+      <td><a href="http://devserver:5000/device/${r.serial}" target="_blank" rel="noopener" style="color:var(--accent);font-family:monospace">${r.serial}</a></td>
       <td>${r.product}</td>
       <td>${r.fixture || "—"}</td>
       <td>${r.phase || "—"}</td>

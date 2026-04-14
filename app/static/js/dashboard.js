@@ -632,5 +632,6 @@ qs("mq-metric-select").addEventListener("change", () => {
   loadMeasurements(days, gran);
 });
 
-// ── Initial load ───────────────────────────────────────────────────────────
+// ── Initial load + auto-refresh every 30 s ────────────────────────────────
 refreshAll();
+setInterval(refreshAll, 30_000);

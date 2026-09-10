@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fixture {{ fixture_id }} — MFG Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1 id="fixture-title">Fixture {{ fixture_id }}</h1>
+      <div class="controls">
+        <a class="nav-button" href="/">Dashboard</a>
+        <button id="refresh-btn">Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="cards fixture-detail-cards">
+      <div class="card" id="status-card">
+        <div class="card-label">Status</div>
+        <div class="card-value" id="val-status">—</div>
+        <div class="card-sub" id="sub-status"></div>
+      </div>
+      <div class="card" id="production-card">
+        <div class="card-label">Production Ready</div>
+        <div class="card-value" id="val-production">—</div>
+        <div class="card-sub" id="sub-production"></div>
+      </div>
+      <div class="card" id="score-card">
+        <div class="card-label">Health Score</div>
+        <div class="card-value" id="val-score">—</div>
+        <div class="card-sub" id="sub-score"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Last Heartbeat</div>
+        <div class="card-value compact" id="val-heartbeat">—</div>
+        <div class="card-sub" id="sub-heartbeat"></div>
+      </div>
+    </section>
+
+    <section class="section-row">
+      <div class="chart-box half">
+        <h2>Fixture Identity</h2>
+        <div class="detail-kv" id="fixture-identity"></div>
+      </div>
+      <div class="chart-box half">
+        <h2>Computer & Software</h2>
+        <div class="detail-kv" id="fixture-software"></div>
+      </div>
+    </section>
+
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Components</h2>
+        <div class="table-wrap">
+          <table id="tbl-components">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Version</th>
+                <th>Serial</th>
+                <th>Address</th>
+                <th>Last Seen</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Latest Checks</h2>
+        <div class="table-wrap">
+          <table id="tbl-checks">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Check</th>
+                <th>Status</th>
+                <th>Severity</th>
+                <th>Blocks</th>
+                <th>Observed</th>
+                <th>Expected</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-row">
+      <div class="chart-box half">
+        <h2>Health History</h2>
+        <div class="table-wrap">
+          <table id="tbl-history">
+            <thead>
+              <tr>
+                <th>Captured</th>
+                <th>Status</th>
+                <th>Ready</th>
+                <th>Score</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="chart-box half">
+        <h2>Alert Events</h2>
+        <div class="table-wrap">
+          <table id="tbl-alert-events">
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Delivery</th>
+                <th>Channels</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-row">
+      <div class="chart-box full">
+        <h2>Recent Runs</h2>
+        <div class="table-wrap">
+          <table id="tbl-fixture-runs">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Serial</th>
+                <th>Phase</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Result</th>
+                <th>Log</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Emporia Energy — Manufacturing Dashboard</span>
+    <span id="last-refresh"></span>
+  </footer>
+
+  <script>
+    "use strict";
+
+    const fixtureId = {{ fixture_id|tojson }};
+    const PASS_COLOR = "#27c98a";
+    const FAIL_COLOR = "#ef4444";
+    const WARN_COLOR = "#f59e0b";
+
+    const qs = id => document.getElementById(id);
+    const fmtDur = s => s == null ? "—" : `${Math.floor(s/60)}m ${Math.round(s%60)}s`;
+    const fmtDt = iso => iso ? new Date(iso).toLocaleString() : "—";
+    const esc = value => String(value ?? "—")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+    function statusClass(status) {
+      if (["ok", "pass"].includes(status)) return "pass";
+      if (["degraded", "warn", "warning", "needs_attention"].includes(status)) return "warn";
+      if (["down", "fail", "critical"].includes(status)) return "fail";
+      return "unknown";
+    }
+
+    function statusText(status) {
+      return String(status || "unknown").replaceAll("_", " ").toUpperCase();
+    }
+
+    function badge(status) {
+      const cls = statusClass(status);
+      return `<span class="badge ${cls}">${statusText(status)}</span>`;
+    }
+
+    function kv(rows) {
+      return rows.map(([k, v]) => `
+        <div class="kv-row">
+          <span>${esc(k)}</span>
+          <strong>${esc(v)}</strong>
+        </div>
+      `).join("");
+    }
+
+    function setCardState(cardId, status) {
+      const el = qs(cardId);
+      el.classList.remove("pass", "warn", "fail");
+      const cls = statusClass(status);
+      if (cls !== "unknown") el.classList.add(cls);
+    }
+
+    async function refreshFixture() {
+      const data = await fetch(`/api/fixtures/${encodeURIComponent(fixtureId)}`).then(r => r.json());
+      const fixture = data.fixture;
+      const snap = fixture.latest_snapshot || {};
+
+      qs("fixture-title").textContent = `${fixture.display_name} Fixture`;
+      qs("val-status").textContent = statusText(fixture.latest_status);
+      qs("sub-status").textContent = fixture.summary || "";
+      setCardState("status-card", fixture.latest_status);
+
+      qs("val-production").textContent = fixture.can_run_production ? "YES" : "NO";
+      qs("sub-production").textContent = fixture.can_run_production ? "Production can run" : "Production blocked or unknown";
+      setCardState("production-card", fixture.can_run_production ? "ok" : "fail");
+
+      qs("val-score").textContent = fixture.health_score == null ? "—" : fixture.health_score;
+      qs("sub-score").textContent = fixture.health_score == null ? "" : "0-100 weighted rollup";
+      setCardState("score-card", fixture.health_score >= 90 ? "ok" : fixture.health_score >= 70 ? "warn" : "fail");
+
+      qs("val-heartbeat").textContent = fmtDt(fixture.last_heartbeat_at);
+      qs("sub-heartbeat").textContent = fixture.hostname || "";
+
+      qs("fixture-identity").innerHTML = kv([
+        ["Fixture ID", fixture.fixture_id],
+        ["Station", fixture.station_type],
+        ["Site", fixture.site],
+        ["Line", fixture.line],
+        ["Location", fixture.location],
+        ["Product", fixture.product_family],
+        ["Asset Tag", fixture.asset_tag],
+        ["Fixture Serial", fixture.serial_number],
+        ["Owner", fixture.owner],
+      ]);
+
+      qs("fixture-software").innerHTML = kv([
+        ["Hostname", fixture.hostname],
+        ["Repo SHA", snap.repo_sha],
+        ["Repo Branch", snap.repo_branch],
+        ["Dirty Tree", snap.repo_dirty == null ? "—" : (snap.repo_dirty ? "yes" : "no")],
+        ["Software", snap.software_version],
+        ["Agent", snap.agent_version],
+        ["Config Hash", snap.config_hash],
+        ["Uptime", fmtDur(snap.uptime_s)],
+        ["Load Avg", snap.load_avg],
+        ["CPU Temp", snap.cpu_temp_c == null ? "—" : `${snap.cpu_temp_c} C`],
+        ["Disk Free", snap.disk_free_gb == null ? "—" : `${snap.disk_free_gb} GB`],
+        ["Disk Used", snap.disk_used_pct == null ? "—" : `${snap.disk_used_pct}%`],
+        ["Time Sync", snap.time_sync_ok == null ? "—" : (snap.time_sync_ok ? "ok" : "bad")],
+        ["Support Bundle", snap.support_bundle_uri],
+      ]);
+
+      qs("tbl-components").querySelector("tbody").innerHTML = data.components.map(c => `
+        <tr>
+          <td>${esc(c.component_type)}</td>
+          <td>${esc(c.name)}</td>
+          <td>${badge(c.status)}</td>
+          <td>${esc(c.version)}</td>
+          <td>${esc(c.serial_number)}</td>
+          <td>${esc(c.address)}</td>
+          <td>${fmtDt(c.last_seen_at)}</td>
+          <td>${esc(c.notes)}</td>
+        </tr>
+      `).join("");
+
+      qs("tbl-checks").querySelector("tbody").innerHTML = data.checks.map(c => `
+        <tr>
+          <td>${esc(c.category)}</td>
+          <td>${esc(c.name)}</td>
+          <td>${badge(c.status)}</td>
+          <td>${badge(c.severity)}</td>
+          <td>${c.blocks_production ? "yes" : "no"}</td>
+          <td>${esc(c.observed)}</td>
+          <td>${esc(c.expected)}</td>
+          <td>${esc(c.message)}</td>
+        </tr>
+      `).join("");
+
+      qs("tbl-history").querySelector("tbody").innerHTML = data.history.map(h => `
+        <tr>
+          <td>${fmtDt(h.captured_at)}</td>
+          <td>${badge(h.overall_status)}</td>
+          <td>${h.can_run_production ? "yes" : "no"}</td>
+          <td>${h.health_score ?? "—"}</td>
+          <td>${esc(h.summary)}</td>
+        </tr>
+      `).join("");
+
+      qs("tbl-alert-events").querySelector("tbody").innerHTML = data.alert_events.map(a => `
+        <tr>
+          <td>${fmtDt(a.created_at)}</td>
+          <td>${badge(a.status)}</td>
+          <td>${badge(a.delivery_state)}</td>
+          <td>${esc((a.channels || []).join(", ") || "—")}</td>
+          <td>${esc(a.message)}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No alert events</td></tr>`;
+
+      qs("tbl-fixture-runs").querySelector("tbody").innerHTML = data.recent_runs.map(r => `
+        <tr>
+          <td>${r.id}</td>
+          <td><a href="http://devserver:5000/device/${esc(r.serial)}" target="_blank" rel="noopener" style="color:var(--accent);font-family:monospace">${esc(r.serial)}</a></td>
+          <td>${esc(r.phase)}</td>
+          <td>${fmtDt(r.started_at)}</td>
+          <td>${fmtDur(r.duration_s)}</td>
+          <td>${badge(r.pass ? "ok" : "fail")}</td>
+          <td>${r.has_log ? `<a class="log-link" href="#" data-run-id="${r.id}">Download</a>` : "—"}</td>
+        </tr>
+      `).join("");
+
+      qs("last-refresh").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    }
+
+    document.addEventListener("click", async e => {
+      const link = e.target.closest(".log-link");
+      if (!link) return;
+      e.preventDefault();
+      const runId = link.dataset.runId;
+      const oldText = link.textContent;
+      link.textContent = "...";
+      try {
+        const resp = await fetch(`/api/runs/${runId}/log_url`);
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body.error || "log URL failed");
+        window.open(body.url, "_blank");
+      } catch (err) {
+        alert(`Could not fetch log: ${err.message || err}`);
+      }
+      link.textContent = oldText;
+    });
+
+    qs("refresh-btn").addEventListener("click", refreshFixture);
+    refreshFixture();
+    setInterval(refreshFixture, 30_000);
+  </script>
+</body>
+</html>

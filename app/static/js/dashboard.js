@@ -22,6 +22,28 @@ let runsTotal = 0;
 const fmtDur = s => s == null ? "—" : `${Math.floor(s/60)}m ${Math.round(s%60)}s`;
 const fmtDt  = iso => iso ? new Date(iso).toLocaleString() : "—";
 const qs     = id => document.getElementById(id);
+const esc    = value => String(value ?? "—")
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
+
+function statusClass(status) {
+  if (["ok", "pass"].includes(status)) return "pass";
+  if (["degraded", "warn", "warning", "needs_attention"].includes(status)) return "warn";
+  if (["down", "fail", "critical"].includes(status)) return "fail";
+  return "unknown";
+}
+
+function statusText(status) {
+  return String(status || "unknown").replaceAll("_", " ").toUpperCase();
+}
+
+function statusBadge(status) {
+  const cls = statusClass(status);
+  return `<span class="badge ${cls}">${statusText(status)}</span>`;
+}
 
 function makeDataset(label, data, color, extra = {}) {
   return { label, data, backgroundColor: color + "cc", borderColor: color,
@@ -50,6 +72,7 @@ async function refreshAll() {
     loadFpyRty(days, gran),
     loadFailures(days),
     loadMeasurements(days, gran),
+    loadFixtureHealth(),
   ]);
 
   runsPage = 1;
@@ -125,6 +148,53 @@ async function loadSummary(days) {
       },
     },
   });
+}
+
+// ── Fixture Health ─────────────────────────────────────────────────────────
+async function loadFixtureHealth() {
+  const fixtures = await fetch("/api/fixtures").then(r => r.json());
+  const cards = qs("fixture-health-cards");
+  const tbody = qs("tbl-fixtures").querySelector("tbody");
+
+  if (!fixtures.length) {
+    cards.innerHTML = `<div class="empty-state">No fixture health records have been ingested yet.</div>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">No fixture health records</td></tr>`;
+    return;
+  }
+
+  cards.innerHTML = fixtures.map(f => {
+    const cls = statusClass(f.latest_status);
+    const counts = f.check_counts || {};
+    return `
+      <a class="fixture-health-card ${cls}" href="/fixtures/${encodeURIComponent(f.fixture_id)}">
+        <div class="fixture-card-top">
+          <span class="fixture-id">${esc(f.fixture_id)}</span>
+          ${statusBadge(f.latest_status)}
+        </div>
+        <div class="fixture-score">${f.health_score ?? "—"}</div>
+        <div class="fixture-card-sub">${esc(f.station_type)} · ${esc(f.hostname)}</div>
+        <div class="fixture-card-sub">${f.can_run_production ? "Production ready" : "Production blocked or unknown"}</div>
+        <div class="fixture-card-checks">
+          <span>${counts.fail || 0} fail</span>
+          <span>${counts.warn || 0} warn</span>
+          <span>${counts.ok || 0} ok</span>
+        </div>
+      </a>`;
+  }).join("");
+
+  tbody.innerHTML = fixtures.map(f => `
+    <tr class="click-row" data-href="/fixtures/${encodeURIComponent(f.fixture_id)}">
+      <td><a class="fixture-link" href="/fixtures/${encodeURIComponent(f.fixture_id)}">${esc(f.fixture_id)}</a></td>
+      <td>${esc(f.station_type)}</td>
+      <td>${esc(f.hostname)}</td>
+      <td>${statusBadge(f.latest_status)}</td>
+      <td>${f.can_run_production ? "yes" : "no"}</td>
+      <td>${f.health_score ?? "—"}</td>
+      <td>${fmtDt(f.last_heartbeat_at)}</td>
+      <td>${f.blocking_checks ?? "—"}</td>
+      <td>${esc(f.summary)}</td>
+    </tr>
+  `).join("");
 }
 
 // ── Daily throughput ───────────────────────────────────────────────────────
@@ -590,11 +660,18 @@ async function loadRuns(reset = false) {
 
 // ── Log download (presigned S3 URL, fetched on click) ─────────────────────
 document.addEventListener("click", async e => {
+  const row = e.target.closest(".click-row");
+  if (row && row.dataset.href && !e.target.closest("a, button, select")) {
+    window.location.href = row.dataset.href;
+    return;
+  }
+
   const link = e.target.closest(".log-link");
   if (!link) return;
   e.preventDefault();
 
   const runId = link.dataset.runId;
+  if (!runId) return;
   link.textContent = "…";
 
   try {

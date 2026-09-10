@@ -25,9 +25,9 @@ SQL
 echo "==> Installing Python dependencies..."
 pip install -r requirements.txt
 
-echo "==> Running Flask-Migrate to create tables..."
+echo "==> Creating dashboard tables from SQLAlchemy models..."
 export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost/${DB_NAME}"
-flask db upgrade
+python scripts/create_schema.py
 
 echo ""
 echo "Done. Database is ready."

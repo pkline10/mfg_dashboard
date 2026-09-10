@@ -81,6 +81,19 @@ select, button {
 select:hover, button:hover { border-color: var(--accent); }
 button { color: var(--accent); font-weight: 600; }
 
+.nav-button {
+  background: var(--surface2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: .85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color .15s;
+}
+.nav-button:hover { border-color: var(--accent); }
+
 /* ── Main layout ──────────────────────────────────────────────────────── */
 main {
   max-width: 1400px;
@@ -108,6 +121,7 @@ main {
   gap: 6px;
 }
 .card.pass { border-color: var(--pass); }
+.card.warn { border-color: var(--warn); }
 .card.fail { border-color: var(--fail); }
 
 .card-label {
@@ -125,7 +139,9 @@ main {
   color: var(--text);
 }
 .card.pass .card-value { color: var(--pass); }
+.card.warn .card-value { color: var(--warn); }
 .card.fail .card-value { color: var(--fail); }
+.card-value.compact { font-size: 1.3rem; line-height: 1.2; }
 
 .card-sub {
   font-size: .8rem;
@@ -158,6 +174,13 @@ main {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: .06em;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
 }
 
 canvas { max-height: 280px; }
@@ -203,13 +226,106 @@ tr:hover td { background: var(--surface2); }
   letter-spacing: .04em;
 }
 .badge.pass { background: rgba(39,201,138,.15); color: var(--pass); }
+.badge.warn { background: rgba(245,158,11,.15); color: var(--warn); }
 .badge.fail { background: rgba(239,68,68,.15);  color: var(--fail); }
+.badge.unknown { background: rgba(123,127,168,.15); color: var(--text-muted); }
+
+.click-row { cursor: pointer; }
 
 /* ── Section hint text ────────────────────────────────────────────────── */
 .section-hint {
   font-size: .78rem;
   color: var(--text-muted);
   margin-top: -6px;
+}
+
+/* ── Fixture Health ───────────────────────────────────────────────────── */
+.fixture-health-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.fixture-health-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 140px;
+}
+.fixture-health-card.pass { border-color: var(--pass); }
+.fixture-health-card.warn { border-color: var(--warn); }
+.fixture-health-card.fail { border-color: var(--fail); }
+.fixture-health-card:hover { border-color: var(--accent); }
+
+.fixture-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.fixture-id {
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+
+.fixture-score {
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.fixture-health-card.pass .fixture-score { color: var(--pass); }
+.fixture-health-card.warn .fixture-score { color: var(--warn); }
+.fixture-health-card.fail .fixture-score { color: var(--fail); }
+
+.fixture-card-sub {
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+
+.fixture-card-checks {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+
+.empty-state {
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.detail-kv {
+  display: grid;
+  grid-template-columns: minmax(120px, .35fr) 1fr;
+  gap: 8px 14px;
+}
+
+.kv-row {
+  display: contents;
+}
+
+.kv-row span {
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+
+.kv-row strong {
+  color: var(--text);
+  font-size: .82rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 /* ── RTY cards ────────────────────────────────────────────────────────── */
@@ -283,6 +399,14 @@ tr:hover td { background: var(--surface2); }
   font-weight: 600;
 }
 .log-link:hover { text-decoration: underline; }
+
+.fixture-link {
+  color: var(--accent);
+  font-size: .78rem;
+  text-decoration: none;
+  font-weight: 700;
+}
+.fixture-link:hover { text-decoration: underline; }
 
 /* ── Run filters ──────────────────────────────────────────────────────── */
 .run-filters {

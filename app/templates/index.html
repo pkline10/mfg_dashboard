@@ -25,6 +25,7 @@
             <option value="month">Monthly</option>
           </select>
         </label>
+        <a class="nav-button" href="#fixture-health-section">Fixtures</a>
         <button id="refresh-btn">Refresh</button>
       </div>
     </div>
@@ -52,6 +53,39 @@
         <div class="card-label">Avg Cycle Time</div>
         <div class="card-value" id="val-cycle">—</div>
         <div class="card-sub" id="sub-cycle"></div>
+      </div>
+    </section>
+
+    <!-- Fixture health -->
+    <section class="section-row" id="fixture-health-section">
+      <div class="chart-box full">
+        <div class="section-title-row">
+          <div>
+            <h2>Fixture Health</h2>
+            <p class="section-hint">
+              Remote health for Guadalajara fixture PCs, TestPilot boards, instruments, LED Sensor Boards, and audio sensors.
+            </p>
+          </div>
+        </div>
+        <div id="fixture-health-cards" class="fixture-health-cards"></div>
+        <div class="table-wrap">
+          <table id="tbl-fixtures">
+            <thead>
+              <tr>
+                <th>Fixture</th>
+                <th>Station</th>
+                <th>Host</th>
+                <th>Status</th>
+                <th>Production</th>
+                <th>Score</th>
+                <th>Last Heartbeat</th>
+                <th>Blocking Checks</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
